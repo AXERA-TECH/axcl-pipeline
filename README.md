@@ -47,6 +47,14 @@ make -j$(nproc)
 
 ## ▶️ 运行示例
 
+### 下载模型
+```bash
+# 有需要可以将 https://huggingface.co 换成 https://hf-mirror.com/
+wget https://huggingface.co/AXERA-TECH/YOLO11/resolve/main/ax650/yolo11s.axmodel
+wget https://huggingface.co/AXERA-TECH/YOLO11/resolve/main/ax650/yolo11x.axmodel
+wget https://huggingface.co/AXERA-TECH/YOLOv8/resolve/main/ax650/yolov8s.axmodel
+```
+
 ### ✅ RTSP 流输入 / 输出
 
 #### 1. 启动 RTSP 服务（使用 `mediamtx`）
