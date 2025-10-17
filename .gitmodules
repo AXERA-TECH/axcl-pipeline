@@ -1,0 +1,3 @@
+[submodule "src/libdet"]
+	path = src/libdet
+	url = git@github.com:AXERA-TECH/libdet.axera.git
