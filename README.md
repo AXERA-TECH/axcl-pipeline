@@ -30,7 +30,7 @@ sudo dpkg -i ~/axcl_host_x86_64_V....deb
 ## 🧱 编译步骤
 
 ```bash
-git clone https://github.com/axera-ai/axcl-pipeline.git
+git clone https://github.com/AXERA-TECH/axcl-pipeline.git
 cd axcl-pipeline
 git submodule update --init --recursive
 
