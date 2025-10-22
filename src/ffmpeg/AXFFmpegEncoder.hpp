@@ -270,7 +270,7 @@ public:
                 encode_pts++;
             }
 
-            av_packet_rescale_ts(pkt, (AVRational){1, 30}, out_stream->time_base);
+            av_packet_rescale_ts(pkt, avctx->time_base, out_stream->time_base);
             pkt->stream_index = out_stream->index;
 
             if ((err = av_interleaved_write_frame(ofmt_ctx, pkt)) < 0)

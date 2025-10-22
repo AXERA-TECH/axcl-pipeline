@@ -29,94 +29,6 @@ extern "C"
 // typedef void (*AXFrameCallback)(AVFrame *frame, void *user_data);
 using AXFrameCallback = std::function<void(AVFrame *frame, void *user_data)>;
 
-static int ConvertYUV420PToNV12(const AVFrame *src, AVFrame *dst)
-{
-    if (!src)
-        return -1;
-    if (src->format != AV_PIX_FMT_YUV420P)
-    {
-        fprintf(stderr, "ConvertYUV420PToNV12: src format is not YUV420P (%d)\n", src->format);
-        return -1;
-    }
-    int w = src->width;
-    int h = src->height;
-    if (w <= 0 || h <= 0)
-        return -1;
-
-    if (!dst)
-        return -1;
-
-    dst->format = AV_PIX_FMT_NV12;
-    dst->width = w;
-    dst->height = h;
-    // preserve timestamps and basic metadata
-    dst->pts = src->pts;
-    // dst->pkt_pts = src->pkt_pts;
-    dst->pkt_dts = src->pkt_dts;
-    dst->sample_aspect_ratio = src->sample_aspect_ratio;
-    if (src->metadata)
-        av_dict_copy(&dst->metadata, src->metadata, 0);
-
-    // allocate buffer for dst (linesizes will be set by av_frame_get_buffer)
-    if (av_frame_get_buffer(dst, 1) < 0)
-    {
-        fprintf(stderr, "ConvertYUV420PToNV12: av_frame_get_buffer failed\n");
-        return -1;
-    }
-
-    // ensure writable
-    if (av_frame_make_writable(dst) < 0)
-    {
-        fprintf(stderr, "ConvertYUV420PToNV12: av_frame_make_writable failed\n");
-        return -1;
-    }
-
-    // Copy Y plane: src->data[0] -> dst->data[0]
-    // handle differing linesize/stride
-    uint8_t *src_y = src->data[0];
-    int src_linesize_y = src->linesize[0];
-    uint8_t *dst_y = dst->data[0];
-    int dst_linesize_y = dst->linesize[0];
-
-    for (int row = 0; row < h; ++row)
-    {
-        // copy min(w, available) bytes
-        memcpy(dst_y + row * dst_linesize_y, src_y + row * src_linesize_y, (size_t)w);
-    }
-
-    // Build NV12 interleaved UV plane from planar U/V
-    // NV12 UV plane has height = h/2, width = w (each row contains interleaved U,V bytes for each chroma sample)
-    uint8_t *src_u = src->data[1];
-    uint8_t *src_v = src->data[2];
-    int src_linesize_u = src->linesize[1];
-    int src_linesize_v = src->linesize[2];
-
-    uint8_t *dst_uv = dst->data[1];
-    int dst_linesize_uv = dst->linesize[1];
-
-    int chroma_h = (h + 1) / 2; // usually h/2 for even heights
-    int chroma_w = (w + 1) / 2;
-
-    // Each dst UV row has w bytes: U0 V0 U1 V1 ...
-    for (int row = 0; row < chroma_h; ++row)
-    {
-        uint8_t *dst_row_ptr = dst_uv + row * dst_linesize_uv;
-        uint8_t *src_u_row_ptr = src_u + row * src_linesize_u;
-        uint8_t *src_v_row_ptr = src_v + row * src_linesize_v;
-
-        // for each chroma column
-        for (int col = 0; col < chroma_w; ++col)
-        {
-            // position in dst: 2*col and 2*col+1
-            dst_row_ptr[2 * col + 0] = src_u_row_ptr[col];
-            dst_row_ptr[2 * col + 1] = src_v_row_ptr[col];
-        }
-        // Note: if dst_linesize_uv > 2*chroma_w, remainder bytes are untouched (ok)
-    }
-
-    return 0;
-}
-
 class AXFFmpegDecoder
 {
 private:
@@ -191,6 +103,7 @@ private:
 
     void func_th_decode()
     {
+        int ret;
         AVFrame *frame = NULL;
         AVFrame *nv12_frame = NULL;
         AVPacket *pstAvPkt = NULL;
@@ -200,6 +113,13 @@ private:
             SAMPLE_LOG_E("Can't allocate frame\n");
             return;
         }
+
+        // frame->format = AV_PIX_FMT_NV12;
+        // frame->width = avctx->width;
+        // frame->height = avctx->height;
+
+        // // 注意这里对齐参数选得足够大（例如 256 或 512）
+        // ret = av_frame_get_buffer(frame, 1);
 
         // if (!nv12_frame)
         // {
@@ -216,7 +136,6 @@ private:
             return;
         }
 
-        int ret;
         while (!loop_exit)
         {
             ret = av_read_frame(pstAvFmtCtx, pstAvPkt);
@@ -289,28 +208,7 @@ private:
                 {
                     if (frame_cb)
                     {
-                        struct SwsContext *sws_ctx = sws_getContext(
-                            frame->width, frame->height, (AVPixelFormat)frame->format,
-                            frame->width, frame->height, AV_PIX_FMT_NV12,
-                            SWS_BILINEAR, NULL, NULL, NULL);
-                        if (!nv12_frame)
-                        {
-                            nv12_frame = av_frame_alloc();
-                            nv12_frame->format = AV_PIX_FMT_NV12;
-                            nv12_frame->width = frame->width;
-                            nv12_frame->height = frame->height;
-                            av_frame_get_buffer(nv12_frame, 0);
-                        }
-                        // AVFrame *nv12_frame = av_frame_alloc();
-
-                        sws_scale(sws_ctx,
-                                  frame->data, frame->linesize,
-                                  0, frame->height,
-                                  nv12_frame->data, nv12_frame->linesize);
-                        nv12_frame->pts = frame->pts;
-                        nv12_frame->pkt_dts = frame->pkt_dts;
-                        // ConvertYUV420PToNV12(frame, nv12_frame);
-                        frame_cb(nv12_frame, user_data);
+                        frame_cb(frame, user_data);
                         // sws_freeContext(sws_ctx);
                     }
 
@@ -441,12 +339,6 @@ public:
         // If user requested auto_decoder, let FFmpeg pick based on codec id
         if (codec_type == AXFFmpegCodecID::auto_ax)
         {
-            codec = avcodec_find_decoder(origin_par->codec_id);
-            if (!codec)
-            {
-                SAMPLE_LOG_E("avcodec_find_decoder by id failed\n");
-                return -1;
-            }
             if (origin_par->codec_id == AV_CODEC_ID_H264)
             {
                 eCodecID = AV_CODEC_ID_H264;
@@ -463,20 +355,13 @@ public:
                 return -1;
             }
         }
-        else
+
+        // try to find special hw child card decoder by name first
+        codec = avcodec_find_decoder_by_name(codec_names);
+        if (!codec)
         {
-            // try to find special hw child card decoder by name first
-            codec = avcodec_find_decoder_by_name(codec_names);
-            if (!codec)
-            {
-                // fallback to normal decoder for the codec id
-                codec = avcodec_find_decoder(origin_par->codec_id);
-                if (!codec)
-                {
-                    SAMPLE_LOG_E("avcodec_find_decoder failed\n");
-                    return -1;
-                }
-            }
+            SAMPLE_LOG_E("avcodec_find_decoder_by_name failed\n");
+            return -1;
         }
 
         avctx = avcodec_alloc_context3(codec);
