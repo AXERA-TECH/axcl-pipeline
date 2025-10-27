@@ -23,7 +23,6 @@
 ```bash
 sudo apt update
 sudo apt install -y libopencv-dev build-essential
-sudo dpkg -i ~/axcl_host_x86_64_V....deb
 ```
 ---
 
@@ -57,13 +56,18 @@ wget https://huggingface.co/AXERA-TECH/YOLOv8/resolve/main/ax650/yolov8s.axmodel
 
 ### ✅ RTSP 流输入 / 输出
 
-#### 1. 启动 RTSP 服务（使用 `mediamtx`）
+#### 1. 启动 RTSP 服务（这里使用 `mediamtx`）
+- 按需下载
+  - [x86_64](https://github.com/bluenviron/mediamtx/releases/download/v1.15.2/mediamtx_v1.15.3_linux_amd64.tar.gz)
+  - [arm64](https://github.com/bluenviron/mediamtx/releases/download/v1.15.3/mediamtx_v1.15.3_linux_arm64.tar.gz)
 
+这里以 x86_64 为例
 ```bash
-wget https://github.com/bluenviron/mediamtx/releases/download/v1.15.2/mediamtx_v1.15.2_linux_amd64.tar.gz
-tar -xzvf mediamtx_v1.15.2_linux_amd64.tar.gz
+wget https://github.com/bluenviron/mediamtx/releases/download/v1.15.2/mediamtx_v1.15.3_linux_amd64.tar.gz
+tar -xzvf mediamtx_v1.15.3_linux_amd64.tar.gz
 ./mediamtx
 ```
+此时，服务会在默认端口 `8554` 上启动 RTSP 服务器。
 
 #### 2. 启动管线推理
 
