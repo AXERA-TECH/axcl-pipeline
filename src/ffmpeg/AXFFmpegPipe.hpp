@@ -64,7 +64,7 @@ private:
 
             if (has_last_result)
             {
-                cv::Mat gray_frame(frame->height, frame->width, CV_8UC1, frame->data[0]);
+                cv::Mat gray_frame(frame->height, frame->width, CV_8UC1, frame->data[0], frame->linesize[0]);
 
                 for (int i = 0; i < result.num_objs; i++)
                 {
