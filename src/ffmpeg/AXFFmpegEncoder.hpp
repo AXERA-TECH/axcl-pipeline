@@ -12,6 +12,7 @@ extern "C"
 #include "libavutil/hwcontext.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
+#include "libavutil/imgutils.h"
 }
 
 #include "utils/def.h"
@@ -61,6 +62,48 @@ private:
         ctx->hw_frames_ctx = av_buffer_ref(hw_frames_ref);
         av_buffer_unref(&hw_frames_ref);
         return 0;
+    }
+
+    AVFrame *match_linesize_and_copy(AVFrame *frame, const AVFrame *hwframe)
+    {
+        // 判断是否一致
+        int same = 1;
+        for (int i = 0; i < 4; i++)
+        {
+            if (frame->linesize[i] != hwframe->linesize[i])
+            {
+                same = 0;
+                break;
+            }
+        }
+
+        if (same)
+        {
+            return frame;
+        }
+
+        // 分配新的 frame
+        AVFrame *newf = av_frame_alloc();
+        newf->format = frame->format;
+        newf->width = frame->width;
+        newf->height = frame->height;
+
+        // 用 hwframe 的对齐要求分配 buffer
+        if (av_frame_get_buffer(newf, 32) < 0)
+        {
+            av_frame_free(&newf);
+            return NULL;
+        }
+
+        // 复制数据（自动处理不同 stride）
+        av_image_copy(newf->data, newf->linesize,
+                      (const uint8_t **)frame->data, frame->linesize,
+                      (AVPixelFormat)frame->format, frame->width, frame->height);
+
+        // 拷贝属性（pts、色彩空间等）
+        av_frame_copy_props(newf, frame);
+
+        return newf;
     }
 
 public:
@@ -177,12 +220,16 @@ public:
         }
 
         // ---------------- 输出初始化 ----------------
-        if (is_rtsp) {
+        if (is_rtsp)
+        {
             avformat_alloc_output_context2(&ofmt_ctx, NULL, "rtsp", url.c_str());
-        } else {
+        }
+        else
+        {
             avformat_alloc_output_context2(&ofmt_ctx, NULL, NULL, url.c_str());
         }
-        if (!ofmt_ctx) {
+        if (!ofmt_ctx)
+        {
             fprintf(stderr, "Could not allocate output context\n");
             return -1;
         }
@@ -232,12 +279,15 @@ public:
 
     int Encode(AVFrame *frame)
     {
-        int err = av_hwframe_transfer_data(hw_frame, frame, 0);
+        auto fixed = match_linesize_and_copy(frame, hw_frame);
+        int err = av_hwframe_transfer_data(hw_frame, fixed, 0);
         if (err < 0)
         {
             fprintf(stderr, "Error transferring frame data: %d\n", err);
             return -1;
         }
+        if (fixed != frame)
+            av_frame_free(&fixed);
 
         hw_frame->pts = frame_count++;
 
