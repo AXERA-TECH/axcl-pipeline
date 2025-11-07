@@ -20,7 +20,7 @@ extern "C"
 class AXFFmpegEncoder
 {
 private:
-    AVFrame *hw_frame = nullptr;
+    AVFrame *hw_frame = nullptr, *sw_frame = nullptr;
     AVCodecContext *avctx = nullptr;
     const AVCodec *codec = nullptr;
     char *enc_name = (char *)"h264_axenc";
@@ -82,28 +82,15 @@ private:
             return frame;
         }
 
-        // 分配新的 frame
-        AVFrame *newf = av_frame_alloc();
-        newf->format = frame->format;
-        newf->width = frame->width;
-        newf->height = frame->height;
-
-        // 用 hwframe 的对齐要求分配 buffer
-        if (av_frame_get_buffer(newf, 32) < 0)
-        {
-            av_frame_free(&newf);
-            return NULL;
-        }
-
         // 复制数据（自动处理不同 stride）
-        av_image_copy(newf->data, newf->linesize,
+        av_image_copy(sw_frame->data, sw_frame->linesize,
                       (const uint8_t **)frame->data, frame->linesize,
                       (AVPixelFormat)frame->format, frame->width, frame->height);
 
         // 拷贝属性（pts、色彩空间等）
-        av_frame_copy_props(newf, frame);
+        av_frame_copy_props(sw_frame, frame);
 
-        return newf;
+        return sw_frame;
     }
 
 public:
@@ -121,6 +108,8 @@ public:
 
         if (hw_frame)
             av_frame_free(&hw_frame);
+        if (sw_frame)
+            av_frame_free(&sw_frame);
         if (avctx)
             avcodec_free_context(&avctx);
         if (hw_device_ctx)
@@ -273,6 +262,16 @@ public:
         if ((err = av_hwframe_get_buffer(avctx->hw_frames_ctx, hw_frame, 0)) < 0)
             return err;
 
+        // 分配软件帧
+        sw_frame = av_frame_alloc();
+        if (!sw_frame)
+            return AVERROR(ENOMEM);
+        sw_frame->format = AV_PIX_FMT_NV12;
+        sw_frame->width = width;
+        sw_frame->height = height;
+        if ((err = av_frame_get_buffer(sw_frame, 0)) < 0)
+            return err;
+
         printf("Encoder initialized for %s output.\n", is_rtsp ? "RTSP" : "File");
         return 0;
     }
@@ -286,8 +285,6 @@ public:
             fprintf(stderr, "Error transferring frame data: %d\n", err);
             return -1;
         }
-        if (fixed != frame)
-            av_frame_free(&fixed);
 
         hw_frame->pts = frame_count++;
 
